@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<flows xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:noNamespaceSchemaLocation="http://matsim.org/files/dtd/flowdefinitions_v1.0.xsd">
+<routes>
     <flow id="flow_kupondole_m_c_561" type="C" route="kupondole_m" begin="0" end="900" number="10"/>
     <flow id="flow_kupondole_m_mb_559" type="MB" route="kupondole_m" begin="0" end="900" number="1"/>
     <flow id="flow_kupondole_m_mib_560" type="MIB" route="kupondole_m" begin="0" end="900" number="2"/>
@@ -4220,4 +4219,4 @@
     <flow id="flow_tri_m_tw_3476" type="TW" route="tri_m" begin="58500" end="59400" number="9"/>
     <flow id="flow_tri_m_u_3474" type="U" route="tri_m" begin="58500" end="59400" number="1"/>
     <flow id="flow_tri_maternity_tw_3711" type="TW" route="tri_maternity" begin="58500" end="59400" number="1"/>
-</flows>
+</routes>

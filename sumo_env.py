@@ -23,12 +23,19 @@ import config
 class SumoEnvironment:
     """
     SUMO Environment wrapper for DQN traffic light control.
+    Supports dynamic flow file switching and traffic metrics collection.
+    Supports named TraCI connections for parallel worker processes.
     """
     
-    def __init__(self, use_gui=False):
+    def __init__(self, use_gui=False, worker_id=None):
         self.use_gui = use_gui
         self.sumo_binary = "sumo-gui" if use_gui else "sumo"
-        self.sumo_cmd = [self.sumo_binary, "-c", config.SUMO_CONFIG_PATH, "--no-warnings"]
+        self.flow_file = None  # Will be set dynamically
+        
+        # Worker identification for parallel training
+        self.worker_id = worker_id
+        self.traci_label = f"worker_{worker_id}" if worker_id is not None else "default"
+        self.conn = None  # TraCI connection reference
         
         self.tls_ids = list(config.TLS_IDS.values())
         self.current_phase = 0
@@ -40,6 +47,35 @@ class SumoEnvironment:
         self.incoming_lanes = []
         self.outgoing_lanes = []
         self.state_size = None
+        
+        # Metrics collection for current episode
+        self.episode_queue_lengths = []
+        self.episode_waiting_times = []
+    
+    def set_flow_file(self, flow_file):
+        """
+        Set the flow file to use for the next simulation.
+        Must be called before reset().
+        
+        Args:
+            flow_file: Path to the flow XML file (e.g., 'Enviroment/flows_day_1.xml')
+        """
+        self.flow_file = flow_file
+        
+    def _build_sumo_cmd(self, start_time=0):
+        """Build the SUMO command with the appropriate flow file and start time."""
+        cmd = [self.sumo_binary, "-c", config.SUMO_CONFIG_PATH, "--no-warnings", "--no-step-log"]
+        
+        if start_time > 0:
+            cmd.extend(["--begin", str(start_time)])
+            
+        # If a specific flow file is set, override the route-files
+        if self.flow_file:
+            # We need to provide VType and routes along with the flow file
+            route_files = f"Enviroment/VType.xml,Enviroment/routes.rou.xml,{self.flow_file}"
+            cmd.extend(["--route-files", route_files])
+        
+        return cmd
         
     def _get_lanes(self):
         """
@@ -55,12 +91,12 @@ class SumoEnvironment:
         for tls_id in self.tls_ids:
             # getControlledLanes() returns duplicates (same lane for different links)
             # So we use set() to keep only unique lanes
-            controlled_lanes = traci.trafficlight.getControlledLanes(tls_id)
+            controlled_lanes = self.conn.trafficlight.getControlledLanes(tls_id)
             for lane in controlled_lanes:
                 incoming.add(lane)
                 
                 # Get outgoing lanes from this lane's connections
-                links = traci.lane.getLinks(lane)
+                links = self.conn.lane.getLinks(lane)
                 for link in links:
                     # link[0] is the outgoing lane
                     # Only add if it's not also an incoming lane (avoid internal lanes)
@@ -76,7 +112,7 @@ class SumoEnvironment:
     def _get_lane_vehicle_count(self, lane):
         """Get number of vehicles on a lane."""
         try:
-            return traci.lane.getLastStepVehicleNumber(lane)
+            return self.conn.lane.getLastStepVehicleNumber(lane)
         except:
             return 0
     
@@ -119,6 +155,44 @@ class SumoEnvironment:
         reward = -total_pressure
         return reward
     
+    def get_total_queue_length(self):
+        """
+        Get total queue length (number of halting vehicles) across all incoming lanes.
+        A vehicle is considered halting if its speed is below 0.1 m/s.
+        """
+        total_halting = 0
+        for lane in self.incoming_lanes:
+            try:
+                total_halting += self.conn.lane.getLastStepHaltingNumber(lane)
+            except:
+                pass
+        return total_halting
+    
+    def get_total_waiting_time(self):
+        """
+        Get total waiting time across all incoming lanes.
+        Returns total waiting time in seconds.
+        """
+        total_waiting = 0.0
+        for lane in self.incoming_lanes:
+            try:
+                total_waiting += self.conn.lane.getWaitingTime(lane)
+            except:
+                pass
+        return total_waiting
+    
+    def get_average_queue_length(self):
+        """Get average queue length per incoming lane."""
+        if not self.incoming_lanes:
+            return 0.0
+        return self.get_total_queue_length() / len(self.incoming_lanes)
+    
+    def get_average_waiting_time(self):
+        """Get average waiting time per incoming lane."""
+        if not self.incoming_lanes:
+            return 0.0
+        return self.get_total_waiting_time() / len(self.incoming_lanes)
+    
     def _set_phase(self, phase_idx):
         """
         Set traffic lights according to the phase.
@@ -128,9 +202,9 @@ class SumoEnvironment:
         for tls_id in self.tls_ids:
             try:
                 # Get current state and set all to red
-                current_state = traci.trafficlight.getRedYellowGreenState(tls_id)
+                current_state = self.conn.trafficlight.getRedYellowGreenState(tls_id)
                 red_state = 'r' * len(current_state)
-                traci.trafficlight.setRedYellowGreenState(tls_id, red_state)
+                self.conn.trafficlight.setRedYellowGreenState(tls_id, red_state)
             except:
                 pass
         
@@ -138,31 +212,31 @@ class SumoEnvironment:
         if phase_idx == 0:  # PHASE_1_STRAIGHTS
             # Maitighar <-> Kupondole
             try:
-                traci.trafficlight.setPhase(config.TLS_IDS["maitighar_main"], 0)
-                traci.trafficlight.setPhase(config.TLS_IDS["kupondole"], 0)
+                self.conn.trafficlight.setPhase(config.TLS_IDS["maitighar_main"], 0)
+                self.conn.trafficlight.setPhase(config.TLS_IDS["kupondole"], 0)
             except:
                 pass
                 
         elif phase_idx == 1:  # PHASE_2_MAITIGHAR_RIGHT
             # Maitighar -> Tripureshwor + Kupondole
             try:
-                traci.trafficlight.setPhase(config.TLS_IDS["maitighar_right"], 0)
-                traci.trafficlight.setPhase(config.TLS_IDS["maitighar_main"], 0)
+                self.conn.trafficlight.setPhase(config.TLS_IDS["maitighar_right"], 0)
+                self.conn.trafficlight.setPhase(config.TLS_IDS["maitighar_main"], 0)
             except:
                 pass
                 
         elif phase_idx == 2:  # PHASE_3_TRIPURESHWOR_STRAIGHT
             # Tripureshwor -> Maternity + Left
             try:
-                traci.trafficlight.setPhase(config.TLS_IDS["tripureshwor"], 0)
-                traci.trafficlight.setPhase(config.TLS_IDS["maternity"], 0)
+                self.conn.trafficlight.setPhase(config.TLS_IDS["tripureshwor"], 0)
+                self.conn.trafficlight.setPhase(config.TLS_IDS["maternity"], 0)
             except:
                 pass
                 
         elif phase_idx == 3:  # PHASE_4_KUPONDOLE_RIGHT
             # Kupondole -> Maternity + Maitighar
             try:
-                traci.trafficlight.setPhase(config.TLS_IDS["kupondole"], 0)
+                self.conn.trafficlight.setPhase(config.TLS_IDS["kupondole"], 0)
             except:
                 pass
     
@@ -170,22 +244,26 @@ class SumoEnvironment:
         """Set all traffic lights to yellow."""
         for tls_id in self.tls_ids:
             try:
-                current_state = traci.trafficlight.getRedYellowGreenState(tls_id)
+                current_state = self.conn.trafficlight.getRedYellowGreenState(tls_id)
                 yellow_state = 'y' * len(current_state)
-                traci.trafficlight.setRedYellowGreenState(tls_id, yellow_state)
+                self.conn.trafficlight.setRedYellowGreenState(tls_id, yellow_state)
             except:
                 pass
     
-    def reset(self):
-        """Reset the environment."""
+    def reset(self, start_time=0):
+        """Reset the environment to a specific start time in the simulation."""
         # Close existing connection if any
         try:
-            traci.close()
+            self.conn.close()
         except:
             pass
         
-        # Start new simulation
-        traci.start(self.sumo_cmd)
+        # Build command with appropriate flow file and start time
+        sumo_cmd = self._build_sumo_cmd(start_time)
+        
+        # Start new simulation with named connection label
+        traci.start(sumo_cmd, label=self.traci_label)
+        self.conn = traci.getConnection(self.traci_label)
         
         # Initialize lanes
         self.incoming_lanes, self.outgoing_lanes = self._get_lanes()
@@ -199,6 +277,10 @@ class SumoEnvironment:
         self.time_since_last_action = 0
         self.step_count = 0
         
+        # Reset episode metrics
+        self.episode_queue_lengths = []
+        self.episode_waiting_times = []
+        
         # Set initial phase
         self._set_phase(self.current_phase)
         
@@ -207,6 +289,7 @@ class SumoEnvironment:
     def step(self, action):
         """
         Execute action and return (next_state, reward, done, info).
+        Also collects queue length and waiting time metrics.
         
         Args:
             action: Phase index (0-3)
@@ -218,9 +301,9 @@ class SumoEnvironment:
         if phase_switch:
             self._set_yellow_phase()
             for _ in range(config.YELLOW_PHASE_DURATION):
-                if traci.simulation.getMinExpectedNumber() <= 0:
+                if self.conn.simulation.getMinExpectedNumber() <= 0:
                     break
-                traci.simulationStep()
+                self.conn.simulationStep()
                 self.step_count += 1
         
         # Set the new phase
@@ -230,32 +313,52 @@ class SumoEnvironment:
         # Execute green phase for ACTION_DURATION seconds
         total_reward = 0
         for _ in range(config.ACTION_DURATION):
-            if traci.simulation.getMinExpectedNumber() <= 0:
+            if self.conn.simulation.getMinExpectedNumber() <= 0:
                 break
-            traci.simulationStep()
+            self.conn.simulationStep()
             self.step_count += 1
             total_reward += self._calculate_reward()
         
         # Average reward over the action duration
         reward = total_reward / config.ACTION_DURATION
         
+        # Collect metrics at each decision step
+        current_queue = self.get_average_queue_length()
+        current_wait = self.get_average_waiting_time()
+        self.episode_queue_lengths.append(current_queue)
+        self.episode_waiting_times.append(current_wait)
+        
         # Get next state
         next_state = self._get_state()
         
         # Check if simulation is done
-        done = (traci.simulation.getMinExpectedNumber() <= 0) or (self.step_count >= config.MAX_STEPS_PER_EPISODE)
+        done = (self.conn.simulation.getMinExpectedNumber() <= 0) or (self.step_count >= config.MAX_STEPS_PER_EPISODE)
         
         info = {
             'step_count': self.step_count,
-            'phase': self.current_phase
+            'phase': self.current_phase,
+            'queue_length': current_queue,
+            'waiting_time': current_wait,
         }
         
         return next_state, reward, done, info
     
+    def get_episode_avg_queue_length(self):
+        """Get the average queue length for the entire episode."""
+        if not self.episode_queue_lengths:
+            return 0.0
+        return np.mean(self.episode_queue_lengths)
+    
+    def get_episode_avg_waiting_time(self):
+        """Get the average waiting time for the entire episode."""
+        if not self.episode_waiting_times:
+            return 0.0
+        return np.mean(self.episode_waiting_times)
+    
     def close(self):
         """Close the environment."""
         try:
-            traci.close()
+            self.conn.close()
         except:
             pass
     

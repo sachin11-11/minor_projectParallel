@@ -1,5 +1,7 @@
+import os
 import numpy as np
 import random
+import pickle
 from collections import deque
 import torch
 import torch.nn as nn
@@ -49,6 +51,14 @@ class ReplayBuffer:
     def size(self):
         """Return current size of the buffer."""
         return len(self.buffer)
+    
+    def get_data(self):
+        """Get all data from the buffer for serialization."""
+        return list(self.buffer)
+    
+    def load_data(self, data):
+        """Load data into the buffer."""
+        self.buffer = deque(data, maxlen=self.buffer.maxlen)
 
 
 class DQNAgent:
@@ -156,9 +166,71 @@ class DQNAgent:
         }, filepath)
         print(f"Model saved to {filepath}")
     
+    def save_checkpoint(self, filepath, episode, metrics, replay_data=None):
+        """
+        Save a full training checkpoint with metrics and replay buffer.
+        
+        Args:
+            filepath: Path to save the checkpoint (.pth file)
+            episode: Current episode number (1-indexed)
+            metrics: Dictionary containing training metrics
+            replay_data: Optional replay buffer data (list of experiences)
+        """
+        checkpoint = {
+            'q_network_state_dict': self.q_network.state_dict(),
+            'target_network_state_dict': self.target_network.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'epsilon': self.epsilon,
+            'episode': episode,
+            'metrics': metrics,
+        }
+        torch.save(checkpoint, filepath)
+        
+        # Save replay buffer separately (can be large)
+        if replay_data is not None:
+            buffer_path = filepath.replace('.pth', '_buffer.pkl')
+            with open(buffer_path, 'wb') as f:
+                pickle.dump(replay_data, f)
+        
+        print(f"Checkpoint saved to {filepath} (episode {episode})")
+    
+    def load_checkpoint(self, filepath):
+        """
+        Load a full training checkpoint.
+        
+        Args:
+            filepath: Path to the checkpoint file
+            
+        Returns:
+            episode: The episode number to resume from
+            metrics: Dictionary containing training metrics
+        """
+        checkpoint = torch.load(filepath, weights_only=False)
+        self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
+        self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.epsilon = checkpoint['epsilon']
+        
+        episode = checkpoint.get('episode', 0)
+        metrics = checkpoint.get('metrics', {})
+        
+        # Try to load replay buffer
+        buffer_path = filepath.replace('.pth', '_buffer.pkl')
+        if os.path.exists(buffer_path):
+            try:
+                with open(buffer_path, 'rb') as f:
+                    buffer_data = pickle.load(f)
+                self.replay_buffer.load_data(buffer_data)
+                print(f"Replay buffer loaded ({self.replay_buffer.size()} experiences)")
+            except Exception as e:
+                print(f"Warning: Could not load replay buffer: {e}")
+        
+        print(f"Checkpoint loaded from {filepath} (episode {episode})")
+        return episode, metrics
+    
     def load(self, filepath):
         """Load the Q-network."""
-        checkpoint = torch.load(filepath)
+        checkpoint = torch.load(filepath, weights_only=False)
         self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
         self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
