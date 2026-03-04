@@ -1,7 +1,7 @@
 # Configuration for DQN Traffic Light Control
 
 # Training parameters
-EPISODES = 500
+EPISODES = 50
 MAX_STEPS_PER_EPISODE = 14400  # 4 hours of simulation flow data (4 episodes per flow day)
 
 # Checkpoint and evaluation intervals
