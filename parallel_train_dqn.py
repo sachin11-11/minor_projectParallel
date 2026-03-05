@@ -385,6 +385,9 @@ def run_parallel_training():
                 metrics_path = os.path.join(config.CHECKPOINT_DIR, "training_metrics.json")
                 with open(metrics_path, 'w') as f:
                     json.dump(json_metrics, f, indent=2)
+                
+                # Generate graphs during the run so we can see live progress
+                generate_training_graphs(episode_rewards)
 
         # ── Check if all workers have exited ──
         all_done = all(not p.is_alive() for p in workers)
