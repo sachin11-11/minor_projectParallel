@@ -150,9 +150,8 @@ def worker_process(worker_id, num_workers, episodes_per_worker,
             state = next_state
             episode_reward += reward
             step_count += 1
-            
-            # Print progress every 500 steps
-            if step_count % 500 == 0:
+            # Print progress every 50 steps
+            if step_count % 50 == 0:
                 print(f"[Worker {worker_id}] Episode {global_ep + 1} | Step {step_count} | "
                       f"Queue: {info['queue_length']:.1f} | Wait: {info['waiting_time']:.1f}s")
 
