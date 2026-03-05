@@ -1,7 +1,7 @@
 # Configuration for DQN Traffic Light Control
 
 # Training parameters
-EPISODES = 100
+EPISODES = 500
 MAX_STEPS_PER_EPISODE = 3600  # 1 hour of simulation flow data
 
 # Checkpoint and evaluation intervals
@@ -14,7 +14,7 @@ BATCH_SIZE = 64
 GAMMA = 0.95  # Discount factor
 EPSILON_START = 1.0
 EPSILON_MIN = 0.01
-EPSILON_DECAY = 0.95
+EPSILON_DECAY = 0.99
 REPLAY_BUFFER_SIZE = 10000
 TARGET_UPDATE_FREQ = 10  # Update target network every N episodes
 
