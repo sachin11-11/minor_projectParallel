@@ -76,7 +76,8 @@ def select_action(q_network, state, epsilon, action_size, device):
 
 def worker_process(worker_id, num_workers, episodes_per_worker,
                    transition_queue, result_queue, weight_queue,
-                   state_size, action_size):
+                   state_size, action_size,
+                   start_global_ep=0, resumed_epsilon=None):
     """
     Worker process that runs SUMO episodes and sends transitions
     to the central learner.
@@ -90,6 +91,8 @@ def worker_process(worker_id, num_workers, episodes_per_worker,
         weight_queue: Queue to receive model weight updates from learner
         state_size: Size of the state vector
         action_size: Number of discrete actions
+        start_global_ep: Starting global episode offset (for resume)
+        resumed_epsilon: Epsilon to resume from (None = start fresh)
     """
     # Import here so each process gets its own traci module state
     from sumo_env import SumoEnvironment
@@ -109,11 +112,11 @@ def worker_process(worker_id, num_workers, episodes_per_worker,
     local_net.load_state_dict(initial_weights)
     print(f"[Worker {worker_id}] Received initial weights, starting episodes")
 
-    epsilon = config.EPSILON_START
+    epsilon = resumed_epsilon if resumed_epsilon is not None else config.EPSILON_START
 
     for local_ep in range(episodes_per_worker):
-        # Map local episode to a global episode number (staggered across workers)
-        global_ep = worker_id + local_ep * num_workers
+        # Map local episode to a global episode number (staggered, offset by resume point)
+        global_ep = start_global_ep + worker_id + local_ep * num_workers
 
         if global_ep >= config.EPISODES:
             break
@@ -256,7 +259,8 @@ def run_parallel_training():
             target=worker_process,
             args=(wid, num_workers, episodes_per_worker,
                   transition_queue, result_queue, weight_queues[wid],
-                  state_size, action_size),
+                  state_size, action_size,
+                  start_global_ep, agent.epsilon),
             daemon=True
         )
         p.start()
