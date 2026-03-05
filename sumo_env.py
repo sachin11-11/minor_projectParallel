@@ -137,14 +137,24 @@ class SumoEnvironment:
     
     def _calculate_reward(self):
         """
-        Calculate reward based on Total Waiting Time penalty.
-        R = - (Total waiting time of all vehicles at the intersection) / 100
-        This forces the agent to clear long-waiting vehicles to minimize the growing penalty.
+        Calculate reward using Max Pressure theory + Waiting Time Penalty.
+        R = -Σ (w(i) - 1/|L_out| * Σ w(j)) - (Total Waiting Time / scale)
         """
+        # Calculate average outgoing count ONLY ONCE to save TraCI calls
+        outgoing_sum = sum(self._get_lane_vehicle_count(lane) for lane in self.outgoing_lanes)
+        avg_outgoing = outgoing_sum / len(self.outgoing_lanes) if len(self.outgoing_lanes) > 0 else 0
+        
+        total_pressure = 0
+        for incoming_lane in self.incoming_lanes:
+            incoming_count = self._get_lane_vehicle_count(incoming_lane)
+            pressure = incoming_count - avg_outgoing
+            total_pressure += pressure
+            
         total_wait = self.get_total_waiting_time()
         
-        # We scale it down slightly so the neural network gradients don't explode
-        reward = -total_wait / 100.0
+        # Combine max pressure and waiting time penalty
+        # Scaling total_wait down so it doesn't completely overpower the pressure
+        reward = -total_pressure - (total_wait / 100.0)
         return reward
     
     def get_total_queue_length(self):
