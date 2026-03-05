@@ -1,8 +1,8 @@
 # Configuration for DQN Traffic Light Control
 
 # Training parameters
-EPISODES = 50
-MAX_STEPS_PER_EPISODE = 14400  # 4 hours of simulation flow data (4 episodes per flow day)
+EPISODES = 100
+MAX_STEPS_PER_EPISODE = 3600  # 1 hour of simulation flow data
 
 # Checkpoint and evaluation intervals
 CHECKPOINT_INTERVAL = 2   # Save checkpoint every 2 episodes
@@ -31,12 +31,9 @@ ACTION_DURATION = GREEN_PHASE_DURATION  # Agent makes decisions every 15 seconds
 SUMO_CONFIG_PATH = "Enviroment/simulation.sumocfg"
 SUMO_GUI = False  # Set to True to visualize during training
 
-# Flow files for Day 1 to Day 4 (Day 5 excluded from training)
+# Flow files for Day 1 only
 FLOW_FILES = [
     "Enviroment/flows_day_1.xml",
-    "Enviroment/flows_day_2.xml",
-    "Enviroment/flows_day_3.xml",
-    "Enviroment/flows_day_4.xml",
 ]
 
 # Traffic light IDs
