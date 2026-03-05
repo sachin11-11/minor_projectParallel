@@ -14,7 +14,7 @@ BATCH_SIZE = 64
 GAMMA = 0.95  # Discount factor
 EPSILON_START = 1.0
 EPSILON_MIN = 0.01
-EPSILON_DECAY = 0.99
+EPSILON_DECAY = 0.95
 REPLAY_BUFFER_SIZE = 10000
 TARGET_UPDATE_FREQ = 10  # Update target network every N episodes
 
