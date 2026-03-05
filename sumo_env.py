@@ -140,13 +140,15 @@ class SumoEnvironment:
         Calculate reward using Max Pressure theory.
         R = -Σ (w(i) - 1/|L_out| * Σ w(j))
         """
-        # Calculate average outgoing count ONLY ONCE to save TraCI calls
-        outgoing_sum = sum(self._get_lane_vehicle_count(lane) for lane in self.outgoing_lanes)
-        avg_outgoing = outgoing_sum / len(self.outgoing_lanes) if len(self.outgoing_lanes) > 0 else 0
-        
         total_pressure = 0
+        
         for incoming_lane in self.incoming_lanes:
             incoming_count = self._get_lane_vehicle_count(incoming_lane)
+            
+            # Calculate average outgoing count
+            outgoing_sum = sum(self._get_lane_vehicle_count(lane) for lane in self.outgoing_lanes)
+            avg_outgoing = outgoing_sum / len(self.outgoing_lanes) if len(self.outgoing_lanes) > 0 else 0
+            
             pressure = incoming_count - avg_outgoing
             total_pressure += pressure
         
@@ -258,11 +260,6 @@ class SumoEnvironment:
         
         # Build command with appropriate flow file and start time
         sumo_cmd = self._build_sumo_cmd(start_time)
-        
-        # Stagger startup to avoid port collisions when multiple workers start TraCI simultaneously
-        if self.worker_id is not None:
-            import time
-            time.sleep(self.worker_id * 1.5)
         
         # Start new simulation with named connection label
         traci.start(sumo_cmd, label=self.traci_label)
