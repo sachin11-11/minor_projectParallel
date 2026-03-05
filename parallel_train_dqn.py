@@ -285,7 +285,6 @@ def run_parallel_training():
 
     # Episode results buffer (may arrive out of order from workers)
     episode_results = {}
-    current_losses = []
 
     while completed_episodes < config.EPISODES:
         # ── Collect transitions (batch of up to 50 at a time) ──
@@ -304,8 +303,6 @@ def run_parallel_training():
                 # Train on each transition if buffer is ready
                 if agent.replay_buffer.size() >= agent.batch_size:
                     loss = agent.replay()
-                    if loss > 0:
-                        current_losses.append(loss)
                     train_steps += 1
 
                     # Periodic weight sync to workers
@@ -339,16 +336,12 @@ def run_parallel_training():
         while completed_episodes in episode_results:
             result = episode_results.pop(completed_episodes)
             episode_rewards.append(result['reward'])
-            
-            avg_loss = float(np.mean(current_losses)) if current_losses else 0.0
-            episode_losses.append(avg_loss)
-            current_losses.clear()
+            episode_losses.append(0.0)  # Loss tracked separately
 
             elapsed = time.time() - training_start_time
             print(f"  Episode {completed_episodes + 1}/{config.EPISODES} "
                   f"[Worker {result['worker_id']}] | "
                   f"Reward: {result['reward']:.2f} | "
-                  f"Loss: {avg_loss:.4f} | "
                   f"Steps: {result['steps']} | "
                   f"Queue: {result['avg_queue']:.2f} | "
                   f"Wait: {result['avg_wait']:.2f}s | "
